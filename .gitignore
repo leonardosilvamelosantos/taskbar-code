@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+status.json
+usage.json
+window_config.json
+ticker.log
+task_debug.jsonl

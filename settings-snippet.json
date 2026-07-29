@@ -1,0 +1,26 @@
+{
+  "_comment": "Trecho para mesclar dentro de hooks{} no seu ~/.claude/settings.json. Cada bloco pode conviver com outros hooks seus no mesmo evento — basta adicionar mais um item ao array de 'hooks' existente, ou ao array do evento.",
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "node \"$HOME/.claude/hooks/taskbar-hero-update.js\"", "shell": "bash" } ] }
+    ],
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "node \"$HOME/.claude/hooks/taskbar-hero-update.js\"", "shell": "bash" } ] }
+    ],
+    "SessionEnd": [
+      { "hooks": [ { "type": "command", "command": "node \"$HOME/.claude/hooks/taskbar-hero-update.js\"", "shell": "bash" } ] }
+    ],
+    "PreToolUse": [
+      { "hooks": [ { "type": "command", "command": "node \"$HOME/.claude/hooks/taskbar-hero-update.js\"", "shell": "bash" } ] }
+    ],
+    "PostToolUse": [
+      { "hooks": [ { "type": "command", "command": "node \"$HOME/.claude/hooks/taskbar-hero-update.js\"", "shell": "bash" } ] }
+    ],
+    "Notification": [
+      { "hooks": [ { "type": "command", "command": "node \"$HOME/.claude/hooks/taskbar-hero-update.js\"", "shell": "bash" } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "node \"$HOME/.claude/hooks/taskbar-hero-update.js\"", "shell": "bash" } ] }
+    ]
+  }
+}
