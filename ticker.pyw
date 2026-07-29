@@ -9,11 +9,18 @@ import json
 import math
 import os
 import sqlite3
+import sys
 import time
 import traceback
 import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path
+
+if sys.platform != "win32":
+    raise SystemExit(
+        "Task Bar Hero so roda no Windows (usa ctypes.windll para janela/z-order "
+        "e o sqlite do Warp em %LOCALAPPDATA%)."
+    )
 
 HOME = os.path.expanduser("~")
 STATUS_DIR = os.path.join(HOME, ".claude", "taskbar-hero")

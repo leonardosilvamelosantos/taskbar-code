@@ -49,24 +49,36 @@ ticker.pyw  ──►  janela tkinter, poll a cada 1s (dados) / 4s (Warp) /
                  60ms (reafirma topmost), desenho 100% em Canvas puro.
 ```
 
-Não há build step nem dependências além da stdlib do Python 3 + `pywin32`
-(já vem instalado na maioria dos setups Windows com Python) para os
-`ctypes`/z-order. `sqlite3` também é stdlib.
+Não há build step nem dependências externas — só a stdlib do Python 3
+(`ctypes`, `sqlite3`, `tkinter`, `json`, `glob`, `os`, `time`, `math`,
+`pathlib`) e do Node (`fs`, `path`, `os`). Nenhum `pip install`/`npm install`
+necessário.
 
 ## Instalação
 
-1. Copie `ticker.pyw` para `~/.claude/taskbar-hero/ticker.pyw` e
-   `hooks/taskbar-hero-update.js` para `~/.claude/hooks/taskbar-hero-update.js`.
-2. Registre os hooks no `~/.claude/settings.json` (veja
-   `settings-snippet.json` neste repo) para os eventos: `UserPromptSubmit`,
-   `PreToolUse`, `PostToolUse`, `Notification`, `Stop`, `SessionStart`,
-   `SessionEnd`.
-3. Se você usa `/statusline` customizado, adicione ao final dele (antes do
-   `process.stdout.write` final) o trecho que grava `usage.json` — veja
-   `statusline-patch.md` neste repo.
-4. Rode `pythonw ticker.pyw` (sem console) ou crie um atalho na pasta
-   Startup do Windows (`shell:startup`) apontando para
-   `pythonw.exe "<caminho>\ticker.pyw"` para iniciar automaticamente no login.
+**Requisitos**: Windows 10/11, Python 3.x com Tkinter, Node.js.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+Isso detecta Python/Node automaticamente, mescla os hooks no seu
+`~/.claude/settings.json` (sem apagar hooks que você já tinha), oferece
+aplicar o patch do `/statusline` se você tiver um customizado, cria o atalho
+de inicialização automática e já sobe o widget. Rodar de novo não duplica
+nada (idempotente). Para desinstalar:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File uninstall.ps1
+```
+
+Se você é um agente (Claude Code) instalando isto para alguém, ou se o
+script não servir no seu ambiente, veja **`INSTALL.md`** — documenta o
+contrato exato por trás do script (formato do merge em `settings.json`,
+onde cada coisa precisa existir, checklist de verificação) para reproduzir
+manualmente.
+
+Veja `CHANGELOG.md` para o histórico de versões.
 
 ## Limitações conhecidas
 
