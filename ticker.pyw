@@ -40,20 +40,18 @@ user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
 
 HWND_TOP = 0
-HWND_NOTOPMOST, HWND_TOPMOST = -2, -1
+HWND_TOPMOST = -1
 SWP_NOMOVE, SWP_NOSIZE, SWP_NOACTIVATE = 0x0002, 0x0001, 0x0010
 GWL_EXSTYLE = -20
 WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW = 0x08000000, 0x00000080
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 STILL_ACTIVE = 259
 
-# ZBID_* — bandas de z-order internas do shell (API nao documentada
-# SetWindowBand/GetWindowBand, presente desde o Windows 8). O shell usa
-# bandas mais altas que ZBID_DEFAULT/ZBID_UIACCESS para flyouts/menu Iniciar;
-# tentamos a banda mais alta plausivel para uma janela comum.
-ZBID_DEFAULT = 0
-ZBID_UIACCESS = 2
-ZBID_IMMERSIVE_NOTIFICATION = 4
+# ZBID_SYSTEM_TOOLS=14 — banda de z-order interna do shell (API nao
+# documentada SetWindowBand/GetWindowBand, desde o Windows 8), mais alta que
+# a banda padrao de janelas comuns. Tentamos essa banda para brigar melhor
+# com flyouts do shell (volume, rede) — nao vence o menu Iniciar, que fica
+# numa banda exclusiva do shell por design de seguranca do Windows.
 ZBID_SYSTEM_TOOLS = 14
 
 # -- paleta ------------------------------------------------------------------
@@ -335,6 +333,9 @@ class Ticker:
         self.last_frame_state = None
         self._pending_save = None
         self._drag_origin = None
+        self._resize_origin = None
+        self._usage_map = {}
+        self._session_pct_cached = None
 
         self.root.update_idletasks()
         self.root.after(0, self._apply_exstyle)
@@ -344,7 +345,6 @@ class Ticker:
         self._poll_warp_names()
         self._poll_data()
         self._schedule_hold()
-        self._draw_frame(STATE_IDLE)
         self._tick()
 
     # -- janela / z-order --------------------------------------------------
@@ -474,9 +474,19 @@ class Ticker:
                 return b
         return None
 
+    def _index_of_sid(self, sid, default=0):
+        return next((i for i, b in enumerate(self.blocks) if b["sid"] == sid), default)
+
     def _poll_data(self):
         try:
             self.blocks = collect_sessions()
+            # usage.json e lido 1x por ciclo de poll (1/s) e cacheado; o slide
+            # roda a ~30fps e antes reabria/reparseava esse arquivo a cada frame.
+            self._usage_map = read_json_safe(USAGE_FILE, {})
+            self._session_pct_cached = (
+                max(self._usage_map.values(), key=lambda e: e.get("updatedAt", 0)).get("sessionPct")
+                if self._usage_map else None
+            )
             if not self.sliding:
                 blk = self._current_block_by_sid(self.current_sid) if self.current_sid else None
                 if blk is None and self.blocks:
@@ -494,28 +504,19 @@ class Ticker:
         self._draw_frame(state)
         self.canvas.delete("blk_cur", "blk_next")
         if blk:
-            idx = next((i for i, b in enumerate(self.blocks) if b["sid"] == blk["sid"]), 0)
+            idx = self._index_of_sid(blk["sid"])
             self._draw_block(blk, g["view_x0"], "blk_cur", g, idx, len(self.blocks), 1.0)
         else:
             self.canvas.create_text(g["view_x0"], g["cy"], text="nenhuma sessão ativa",
                                      fill=TXT_3, anchor="w", font=self.font_summary, tags="blk_cur")
-        self._draw_ring(self._ctx_pct_for(self.current_sid), self._global_session_pct(), g)
+        self._draw_ring(self._ctx_pct_for(self.current_sid), self._session_pct_cached, g)
 
     def _ctx_pct_for(self, sid):
-        """Contexto e por sessao/janela — cada terminal tem sua propria conversa."""
+        """Contexto e por sessao/janela — cada terminal tem sua propria conversa.
+        Le do cache de usage.json (atualizado 1x/s em _poll_data), nao do disco."""
         if not sid:
             return None
-        return read_json_safe(USAGE_FILE, {}).get(sid, {}).get("contextPct")
-
-    def _global_session_pct(self):
-        """O limite de 5h e da CONTA, compartilhado por todos os terminais — usa
-        sempre o valor mais recente entre todas as sessoes, nao o da sessao atual
-        (que pode estar com um dado velho se ela nao rodou nada ha um tempo)."""
-        usage_map = read_json_safe(USAGE_FILE, {})
-        if not usage_map:
-            return None
-        freshest = max(usage_map.values(), key=lambda e: e.get("updatedAt", 0))
-        return freshest.get("sessionPct")
+        return self._usage_map.get(sid, {}).get("contextPct")
 
     # -- moldura (camada 0) -----------------------------------------------------
     def _draw_frame(self, state, force=False):
@@ -568,7 +569,7 @@ class Ticker:
         self.canvas.create_oval(x + w - 6, eye_y - 1.3, x + w - 3, eye_y + 1.3, fill=color, outline="", tags=tag)
         return w
 
-    def _draw_block(self, session, x0, tag, g, idx, total, alpha, color_override=None):
+    def _draw_block(self, session, x0, tag, g, idx, total, alpha):
         one = total <= 1
         l1_cy = g["cy"] - (7 if one else 8)
         l2_cy = g["cy"] + (8 if one else 7)
@@ -576,9 +577,10 @@ class Ticker:
         counter_txt = f"{idx + 1}/{total}" if total > 1 else ""
         counter_w = (self.font_mono.measure(counter_txt) + 10) if counter_txt else 0
 
-        name_col = lerp_color(CARD, TXT_1 if session["status"] == "busy" else TXT_1_DIM, alpha) if color_override is None else color_override[0]
-        sum_col = lerp_color(CARD, TXT_2, alpha) if color_override is None else color_override[1]
-        dim_col = lerp_color(CARD, TXT_3, alpha) if color_override is None else color_override[2]
+        blend = lambda target: lerp_color(CARD, target, alpha)
+        name_col = blend(TXT_1 if session["status"] == "busy" else TXT_1_DIM)
+        sum_col = blend(TXT_2)
+        dim_col = blend(TXT_3)
 
         name = self._truncate(session["name"], avail - counter_w, self.font_name)
         self.canvas.create_text(x0, l1_cy, text=name, anchor="w", fill=name_col,
@@ -588,15 +590,13 @@ class Ticker:
         agents = list((session.get("agents") or {}).values())
         if agents:
             any_running = any(a.get("phase") == "running" for a in agents)
-            icon_target = "#58A6FF" if any_running else OK
-            icon_color = lerp_color(CARD, icon_target, alpha)
+            icon_color = blend("#58A6FF" if any_running else OK)
             icon_w = self._icon_robot(tag, cursor2, l2_cy, icon_color)
             cursor2 += icon_w + 4
             if len(agents) > 1:
                 count_txt = str(len(agents))
-                count_col = lerp_color(CARD, TXT_1, alpha)
                 self.canvas.create_text(cursor2, l2_cy - 5, text=count_txt, anchor="w",
-                                         fill=count_col, font=self.font_mono, tags=tag)
+                                         fill=blend(TXT_1), font=self.font_mono, tags=tag)
                 cursor2 += self.font_mono.measure(count_txt) + 4
 
         elapsed = fmt_elapsed(session.get("updatedAt"))
@@ -628,10 +628,14 @@ class Ticker:
             self.canvas.create_arc(cx - r_in, cy - r_in, cx + r_in, cy + r_in,
                                     start=90, extent=-3.6 * min(100, ctx_pct), style="arc",
                                     width=3, outline=pct_color(ctx_pct), tags="ring")
-        label = "!" if (ctx_pct or 0) >= 100 else (str(ctx_pct) if ctx_pct is not None else "·")
+        if ctx_pct is None:
+            label, label_color = "·", TXT_3
+        elif ctx_pct >= 100:
+            label, label_color = "!", pct_color(ctx_pct)
+        else:
+            label, label_color = str(ctx_pct), (TXT_2 if ctx_pct < 70 else pct_color(ctx_pct))
         self.canvas.create_text(cx, cy, text=label, anchor="center", font=self.font_ring,
-                                 fill=(TXT_2 if (ctx_pct or 0) < 70 else pct_color(ctx_pct)) if ctx_pct is not None else TXT_3,
-                                 tags="ring")
+                                 fill=label_color, tags="ring")
 
     # -- barra de carrossel (camada 3) ---------------------------------------------
     def _draw_carousel(self, g):
@@ -639,7 +643,7 @@ class Ticker:
         total = len(self.blocks)
         if total <= 1:
             return
-        idx = next((i for i, b in enumerate(self.blocks) if b["sid"] == self.current_sid), 0)
+        idx = self._index_of_sid(self.current_sid)
         x0, x1 = g["view_x0"], g["view_x1"]
         bar_y = g["bar_y"]
         hold_progress = 0.0 if self.paused else min(1.0, (time.time() - self.hold_started) * 1000 / self.HOLD_MS)
@@ -728,7 +732,7 @@ class Ticker:
             if self.paused or len(self.blocks) <= 1:
                 self._schedule_hold()
                 return
-            idx = next((i for i, b in enumerate(self.blocks) if b["sid"] == self.current_sid), -1)
+            idx = self._index_of_sid(self.current_sid, default=-1)
             next_block = self.blocks[(idx + 1) % len(self.blocks)]
             self._next_idx = (idx + 1) % len(self.blocks)
             self._next_sid = next_block["sid"]
@@ -758,7 +762,7 @@ class Ticker:
                 self.canvas.delete("blk_cur", "blk_next")
                 self._draw_block(self._next_session, g["view_x0"], "blk_cur", g,
                                   self._next_idx, len(self.blocks), 1.0)
-                self._draw_ring(self._ctx_pct_for(self.current_sid), self._global_session_pct(), g)
+                self._draw_ring(self._ctx_pct_for(self.current_sid), self._session_pct_cached, g)
                 self._schedule_hold()
                 return
 
@@ -776,7 +780,7 @@ class Ticker:
             mix_state = self.slide_to_state if ease > 0.5 else self.slide_from_state
             self._draw_frame(mix_state, force=(mix_state != self.last_frame_state))
             ctx = self._ctx_pct_for(self._next_sid if ease > 0.5 else self.current_sid)
-            self._draw_ring(ctx, self._global_session_pct(), g)
+            self._draw_ring(ctx, self._session_pct_cached, g)
 
             self._mask(g)
         except Exception:

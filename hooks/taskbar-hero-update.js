@@ -42,6 +42,14 @@ function pruneAgents(agents) {
 function summarize(d, prevAgents) {
   const event = d.hook_event_name || '';
   const tool = d.tool_name || null;
+
+  // SessionStart zera os agentes de qualquer execucao anterior (novo processo,
+  // sem estado herdado) — sai antes de podar o mapa anterior, que seria
+  // descartado de qualquer forma.
+  if (event === 'SessionStart') {
+    return { summary: 'Sessão iniciada', tool: null, agents: {} };
+  }
+
   const agents = pruneAgents(prevAgents);
 
   if (tool === 'Agent' && (event === 'PreToolUse' || event === 'PostToolUse')) {
@@ -49,20 +57,22 @@ function summarize(d, prevAgents) {
     const subagentType = ti.subagent_type || 'agent';
     const description = ti.description || '';
     const toolUseId = d.tool_use_id || `${subagentType}:${description}`;
+    const base = { type: subagentType, description, updatedAt: Date.now() };
 
     if (event === 'PreToolUse') {
-      agents[toolUseId] = { type: subagentType, description, phase: 'running', updatedAt: Date.now() };
+      agents[toolUseId] = { ...base, phase: 'running' };
     } else {
       const tr = d.tool_response || {};
       const stats = `${tr.totalToolUseCount || 0} tool uses · ${fmtTokens(tr.totalTokens)} tokens · ${fmtDuration(tr.totalDurationMs)}`;
-      agents[toolUseId] = { type: subagentType, description, phase: 'done', stats, updatedAt: Date.now() };
+      agents[toolUseId] = { ...base, phase: 'done', stats };
     }
 
     const list = Object.values(agents);
-    const latest = list.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+    const latest = list.reduce((a, b) => ((b.updatedAt || 0) > (a.updatedAt || 0) ? b : a));
+    const detail = latest.phase === 'done' ? latest.stats : latest.description;
     const summary = list.length > 1
-      ? `${list.length} agentes · ${latest.type}: ${latest.phase === 'done' ? latest.stats : latest.description}`
-      : (latest.phase === 'done' ? `Concluído · ${latest.stats}` : `${latest.type}: ${latest.description}`);
+      ? `${list.length} agentes · ${latest.type}: ${detail}`
+      : (latest.phase === 'done' ? `Concluído · ${detail}` : `${latest.type}: ${detail}`);
 
     return { summary, tool, agents };
   }
@@ -79,8 +89,6 @@ function summarize(d, prevAgents) {
     case 'Stop':
     case 'SubagentStop':
       return { summary: 'Aguardando novo prompt', tool: null, agents };
-    case 'SessionStart':
-      return { summary: 'Sessão iniciada', tool: null, agents: {} };
     default:
       return { summary: event, tool, agents };
   }
