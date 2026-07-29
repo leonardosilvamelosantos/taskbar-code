@@ -7,6 +7,9 @@
 
 .PARAMETER Yes
   Nao pergunta nada (assume "sim" para o patch opcional do /statusline).
+  Recomendado ao rodar de forma nao-interativa/autonoma (ex: por um agente) -
+  sem isso, se o console nao aceitar input, o script pula o prompt sozinho
+  e avisa, mas -Yes evita a checagem toda.
 #>
 param(
     [switch]$Yes
@@ -27,14 +30,34 @@ function Set-Utf8NoBom ($Path, $Content) {
     [System.IO.File]::WriteAllText($Path, $Content, $enc)
 }
 
+# Read-Host lanca excecao terminante em sessao nao-interativa (ex: rodado por
+# um agente/ferramenta automatizada sem console real) - com
+# $ErrorActionPreference='Stop' isso abortaria o script no meio da instalacao
+# (hooks ja registrados, mas atalho/ticker nunca chegam a rodar). Em vez de
+# travar ou crashar, trata como "nao" e avisa.
+function Read-HostSafe ($Prompt) {
+    try {
+        return Read-Host $Prompt
+    } catch {
+        Write-Warn "Console nao-interativo - nao foi possivel perguntar. Assumindo 'nao'."
+        return $null
+    }
+}
+
 $RepoRoot   = $PSScriptRoot
-$HookPath   = Join-Path $RepoRoot 'hooks\taskbar-hero-update.js'
+$HookPath   = (Resolve-Path (Join-Path $RepoRoot 'hooks\taskbar-hero-update.js')).Path
 $TickerPath = Join-Path $RepoRoot 'ticker.pyw'
 $ClaudeDir  = Join-Path $HOME '.claude'
 $SettingsPath = Join-Path $ClaudeDir 'settings.json'
 
 Write-Host "Task Bar Hero - instalador" -ForegroundColor Magenta
 Write-Host "Repositorio: $RepoRoot`n"
+
+# Se o repo foi baixado como ZIP do GitHub (nao "git clone"), os arquivos
+# ganham "Mark of the Web" e o SmartScreen/politica de execucao pode
+# bloquear silenciosamente. Unblock-File e inofensivo mesmo sem MOTW.
+Get-ChildItem -Path $RepoRoot -Recurse -File -ErrorAction SilentlyContinue |
+    ForEach-Object { Unblock-File -Path $_.FullName -ErrorAction SilentlyContinue }
 
 # -- 1. Detectar Python (com tkinter) -----------------------------------------
 Write-Step "Detectando Python 3 com Tkinter..."
@@ -47,9 +70,11 @@ function Test-PythonCandidate ($exePath) {
 }
 
 try {
-    $pyLauncherExe = (& py -3 -c "import sys; print(sys.executable)" 2>$null)
-    if ($LASTEXITCODE -eq 0 -and $pyLauncherExe) {
-        $pyLauncherExe = $pyLauncherExe.Trim()
+    $pyLauncherOut = @(& py -3 -c "import sys; print(sys.executable)" 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $pyLauncherOut.Count -gt 0) {
+        # @() + Select-Object -Last 1 forca string unica mesmo se o launcher
+        # emitir linhas extras em stdout (avisos de alguma distribuicao, etc.)
+        $pyLauncherExe = ($pyLauncherOut | Select-Object -Last 1).ToString().Trim()
         if (Test-PythonCandidate $pyLauncherExe) {
             $PythonwExe = $pyLauncherExe -replace 'python\.exe$', 'pythonw.exe'
         }
@@ -64,7 +89,7 @@ if (-not $PythonwExe) {
 }
 
 if (-not $PythonwExe -or -not (Test-Path $PythonwExe)) {
-    Write-Err "Python 3 com suporte a Tkinter nao encontrado."
+    Write-Err "Python 3 com suporte a Tkinter nao encontrado (ou so o stub da Microsoft Store esta presente)."
     Write-Host "Instale com:  winget install -e --id Python.Python.3.12"
     Write-Host "Depois rode este instalador de novo."
     exit 1
@@ -82,12 +107,32 @@ if (-not $NodeCmd) {
 }
 Write-Ok "Node: $($NodeCmd.Source)"
 
+# -- 2b. Detectar bash (usado no "shell" dos hooks registrados abaixo) --------
+Write-Step "Detectando bash (necessario para os hooks rodarem)..."
+$BashCmd = Get-Command bash -ErrorAction SilentlyContinue
+if (-not $BashCmd) {
+    Write-Warn "bash nao encontrado no PATH - os hooks registrados usam ""shell"": ""bash"" e vao falhar silenciosamente sem ele."
+    Write-Warn "Instale com:  winget install -e --id Git.Git   (traz o Git Bash)"
+} else {
+    Write-Ok "bash: $($BashCmd.Source)"
+}
+
 # -- 3. Mesclar hooks em settings.json -----------------------------------------
 Write-Step "Configurando hooks em $SettingsPath..."
 New-Item -ItemType Directory -Force -Path $ClaudeDir | Out-Null
 
 if (Test-Path $SettingsPath) {
-    $settings = Get-Content $SettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    try {
+        $settings = Get-Content $SettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        Write-Err "settings.json em '$SettingsPath' contem JSON invalido:"
+        Write-Host "  $($_.Exception.Message)"
+        Write-Err "Corrija o arquivo manualmente (ou restaure um backup) antes de rodar o instalador de novo. Nada foi alterado."
+        exit 1
+    }
+    # Backup antes de qualquer reescrita do arquivo de configuracao central do
+    # usuario - nunca sobrescrever sem uma copia de recuperacao possivel.
+    Copy-Item $SettingsPath "$SettingsPath.bak" -Force
 } else {
     $settings = [PSCustomObject]@{}
 }
@@ -97,8 +142,26 @@ if (-not $settings.PSObject.Properties['hooks']) {
 }
 
 $hookCommand = "node `"$HookPath`""
-$events = @('UserPromptSubmit', 'SessionStart', 'SessionEnd', 'PreToolUse', 'PostToolUse', 'Notification', 'Stop')
+$events = @('UserPromptSubmit', 'SessionStart', 'SessionEnd', 'PreToolUse', 'PostToolUse', 'Notification', 'Stop', 'SubagentStop')
 $added = @()
+
+# Casa pelo CAMINHO ABSOLUTO do hook (normalizado), nao por um substring
+# solto do nome do arquivo - com substring solto, dois clones deste repo em
+# pastas diferentes se confundiriam: instalar o segundo clone acharia "ja
+# esta instalado" (por causa do hook do primeiro) e nunca adicionaria o
+# proprio; desinstalar um apagaria o hook do outro. A normalizacao (barras,
+# "$HOME" expandido) evita o problema oposto: nao duplicar quando o mesmo
+# caminho ja foi registrado com uma grafia diferente (ex: por uma versao
+# anterior deste instalador que usava "$HOME/..." em vez do caminho
+# resolvido).
+function Get-HookCommandPath ($command) {
+    if ($command -match '"([^"]+)"') {
+        $p = $matches[1] -replace '\$HOME', $HOME
+        return ($p -replace '/', '\').TrimEnd('\')
+    }
+    return $null
+}
+$hookPathNormalized = $HookPath.TrimEnd('\')
 
 foreach ($evt in $events) {
     if (-not $settings.hooks.PSObject.Properties[$evt]) {
@@ -108,7 +171,7 @@ foreach ($evt in $events) {
     $alreadyThere = $false
     foreach ($g in $groups) {
         foreach ($h in @($g.hooks)) {
-            if ($h.command -and $h.command -like '*taskbar-hero-update.js*') { $alreadyThere = $true }
+            if ($h.command -and (Get-HookCommandPath $h.command) -ieq $hookPathNormalized) { $alreadyThere = $true }
         }
     }
     if (-not $alreadyThere) {
@@ -143,7 +206,7 @@ if ($settings.PSObject.Properties['statusLine'] -and $settings.statusLine.comman
         } else {
             $doPatch = $Yes
             if (-not $Yes) {
-                $answer = Read-Host "Encontrei seu /statusline em '$slPath'. Aplicar patch para alimentar o anel de uso (contexto/rate-limit)? [s/N]"
+                $answer = Read-HostSafe "Encontrei seu /statusline em '$slPath'. Aplicar patch para alimentar o anel de uso (contexto/rate-limit)? [s/N]"
                 $doPatch = $answer -match '^[sS]'
             }
             if ($doPatch) {
@@ -153,7 +216,14 @@ if ($settings.PSObject.Properties['statusLine'] -and $settings.statusLine.comman
                     $patch = Get-Content (Join-Path $RepoRoot 'statusline-patch.snippet.js') -Raw -Encoding UTF8
                     $newContent = $slContent.Insert($writeIdx, $patch + "`n`n")
                     Set-Utf8NoBom -Path $slPath -Content $newContent
-                    Write-Ok "/statusline atualizado (backup em $slPath.bak)"
+                    $syntaxCheck = & node --check $slPath 2>&1
+                    if ($LASTEXITCODE -ne 0) {
+                        Copy-Item "$slPath.bak" $slPath -Force
+                        Write-Err "O patch quebrou a sintaxe do /statusline - revertido para o original. Detalhe: $syntaxCheck"
+                        Write-Warn "Aplique manualmente (veja statusline-patch.md), com mais cuidado no ponto de insercao."
+                    } else {
+                        Write-Ok "/statusline atualizado e validado (backup em $slPath.bak)"
+                    }
                 } else {
                     Write-Warn "Nao achei onde inserir o patch automaticamente - aplique manualmente (statusline-patch.md)."
                 }
@@ -181,12 +251,29 @@ Write-Ok "Atalho criado em $ShortcutPath"
 
 # -- 6. Subir o ticker agora -----------------------------------------------------
 Write-Step "Iniciando o Task Bar Hero..."
-Get-CimInstance Win32_Process -Filter "Name='pythonw.exe' or Name='python.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -like '*ticker.pyw*' } |
-    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-Start-Process -FilePath $PythonwExe -ArgumentList "`"$TickerPath`"" -WorkingDirectory $RepoRoot
+try {
+    Get-CimInstance Win32_Process -Filter "Name='pythonw.exe' or Name='python.exe'" -ErrorAction Stop |
+        Where-Object { $_.CommandLine -like '*ticker.pyw*' } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+} catch {
+    Write-Warn "Nao consegui consultar processos via WMI (pode estar bloqueado por politica) - se ja havia uma instancia rodando, ela pode continuar ativa junto com a nova."
+}
+
+$proc = Start-Process -FilePath $PythonwExe -ArgumentList "`"$TickerPath`"" -WorkingDirectory $RepoRoot -PassThru
 Start-Sleep -Seconds 1
-Write-Ok "Task Bar Hero no ar."
+$stillRunning = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
+if ($stillRunning) {
+    Write-Ok "Task Bar Hero no ar (PID $($proc.Id))."
+} else {
+    Write-Err "O processo encerrou logo apos iniciar (isso acontece em sessoes sem estacao de janela interativa, ex: RDP/SSH headless)."
+    $logPath = Join-Path $ClaudeDir 'taskbar-hero\ticker.log'
+    if (Test-Path $logPath) {
+        Write-Host "Ultimas linhas de ${logPath}:"
+        Get-Content $logPath -Tail 20
+    } else {
+        Write-Warn "Nenhum log em $logPath - a falha aconteceu antes do widget conseguir logar (provavelmente falta de estacao de janela)."
+    }
+}
 
 Write-Host ""
 Write-Host "Instalacao concluida." -ForegroundColor Green

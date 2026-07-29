@@ -22,19 +22,37 @@ if sys.platform != "win32":
         "e o sqlite do Warp em %LOCALAPPDATA%)."
     )
 
+# Sem isso, em qualquer PC com escala de tela != 100% (padrao de fabrica na
+# maioria dos notebooks Windows) o Windows faz "bitmap stretching" do
+# processo, desalinhando as coordenadas de GetWindowRect/geometry() com a
+# tela real e deixando o texto borrado. Precisa rodar antes de criar o Tk().
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+except Exception:
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
 HOME = os.path.expanduser("~")
 STATUS_DIR = os.path.join(HOME, ".claude", "taskbar-hero")
-STATUS_FILE = os.path.join(STATUS_DIR, "status.json")
+# Um arquivo por sessao (nao um status.json compartilhado) para nao ter
+# corrida de leitura-modificacao-escrita entre terminais diferentes — o
+# hook (hooks/taskbar-hero-update.js) escreve nesse mesmo layout.
+SESSIONS_STATUS_DIR = os.path.join(STATUS_DIR, "sessions")
 USAGE_FILE = os.path.join(STATUS_DIR, "usage.json")
 CONFIG_FILE = os.path.join(STATUS_DIR, "window_config.json")
 SESSIONS_DIR = os.path.join(HOME, ".claude", "sessions")
 LOG_FILE = os.path.join(STATUS_DIR, "ticker.log")
+LOG_MAX_BYTES = 5 * 1024 * 1024
 
 os.makedirs(STATUS_DIR, exist_ok=True)
 
 
 def log_exception(where):
     try:
+        if os.path.exists(LOG_FILE) and os.path.getsize(LOG_FILE) > LOG_MAX_BYTES:
+            os.replace(LOG_FILE, LOG_FILE + ".1")
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(f"--- {where} ---\n")
             f.write(traceback.format_exc())
@@ -87,8 +105,26 @@ class RECT(ctypes.Structure):
                 ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
 
 
+SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN = 76, 77
+SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN = 78, 79
+
+
+def get_virtual_screen_rect():
+    x = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+    y = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+    w = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+    h = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+    return x, y, x + w, y + h
+
+
 def get_taskbar_rect():
     hwnd = user32.FindWindowW("Shell_TrayWnd", None)
+    if not hwnd:
+        # Shell ainda nao pronto (corrida no logon) ou substituido — cai para
+        # a area de trabalho primaria em vez de estourar com hwnd=0.
+        w = user32.GetSystemMetrics(0)
+        h = user32.GetSystemMetrics(1)
+        return 0, h - 40, w, h
     rect = RECT()
     user32.GetWindowRect(hwnd, ctypes.byref(rect))
     return rect.left, rect.top, rect.right, rect.bottom
@@ -112,16 +148,26 @@ def read_json_safe(path, fallback):
         return fallback
 
 
-def load_window_config():
-    cfg = read_json_safe(CONFIG_FILE, None)
-    if cfg and all(k in cfg for k in ("x", "y", "w", "h")):
-        return cfg
+def _default_window_config():
     left, top, right, bottom = get_taskbar_rect()
     h = max(28, bottom - top)
     w = 380
     x = max(left, right - w - 160)
     y = top
     return {"x": x, "y": y, "w": w, "h": h}
+
+
+def load_window_config():
+    cfg = read_json_safe(CONFIG_FILE, None)
+    if cfg and all(k in cfg for k in ("x", "y", "w", "h")):
+        # Posicao salva pode ter ficado fora da tela atual (monitor externo
+        # desconectado, resolucao mudou) — nesse caso a janela ficaria
+        # invisivel para sempre, sem forma de acessar o menu (clique direito)
+        # para resetar. Valida contra a area virtual atual antes de confiar.
+        vx0, vy0, vx1, vy1 = get_virtual_screen_rect()
+        if cfg["x"] + cfg["w"] > vx0 and cfg["x"] < vx1 and cfg["y"] + cfg["h"] > vy0 and cfg["y"] < vy1:
+            return cfg
+    return _default_window_config()
 
 
 def save_window_config(cfg):
@@ -219,6 +265,13 @@ def fmt_elapsed(ms):
 def derive_state(session):
     if session["status"] == "busy":
         return STATE_WORKING
+    # Uma tarefa em segundo plano (ex: Bash com run_in_background) ainda
+    # rodando conta como "trabalhando", mesmo que o campo status da sessao
+    # (mantido pelo proprio Claude Code) ja tenha voltado para idle entre
+    # turnos — sem isso o pulso mostrava ocioso enquanto o resumo dizia
+    # "aguardando em 2o plano", uma contradicao visual.
+    if any(b.get("phase") == "running" for b in (session.get("background") or {}).values()):
+        return STATE_WORKING
     if "aguardando sua resposta" in (session.get("summary") or "").lower():
         return STATE_NEEDS_YOU
     return STATE_IDLE
@@ -271,12 +324,16 @@ def get_ai_title(sid, cwd):
     return title
 
 
+def read_hook_status(sid):
+    return read_json_safe(os.path.join(SESSIONS_STATUS_DIR, f"{sid}.json"), {})
+
+
 def collect_sessions():
-    """Junta ~/.claude/sessions/<pid>.json (status busy/idle) com o status.json
-    escrito pelos hooks (evento/tool/summary/updatedAt/agent), casando por
-    sessionId, e o titulo real da conversa (aiTitle) do transcript."""
-    hook_status = read_json_safe(STATUS_FILE, {"sessions": {}}).get("sessions", {})
+    """Junta ~/.claude/sessions/<pid>.json (status busy/idle) com o estado por
+    sessao escrito pelos hooks (evento/tool/summary/updatedAt/agents), casando
+    por sessionId, e o titulo real da conversa (aiTitle) do transcript."""
     entries = []
+    live_sids = set()
     for path in sorted(glob.glob(os.path.join(SESSIONS_DIR, "*.json"))):
         s = read_json_safe(path, None)
         if not s:
@@ -285,7 +342,8 @@ def collect_sessions():
         if pid and not is_pid_alive(pid):
             continue
         sid = s.get("sessionId")
-        hook = hook_status.get(sid, {})
+        live_sids.add(sid)
+        hook = read_hook_status(sid)
         cwd = hook.get("cwd") or s.get("cwd")
         warp_name = _warp_name_cache.get(hook.get("warpUuid"))
         name = warp_name or get_ai_title(sid, cwd) or s.get("name") or project_name(cwd)
@@ -296,8 +354,14 @@ def collect_sessions():
         entries.append({
             "sid": sid, "name": name, "status": status, "summary": summary,
             "tool": hook.get("tool"), "agents": hook.get("agents") or {},
+            "background": hook.get("background") or {},
             "updatedAt": hook.get("updatedAt") or s.get("updatedAt"),
         })
+    # sessoes que ja nao existem mais nunca terao seu titulo reconsultado —
+    # sem podar, _title_cache cresce sem limite numa maquina usada por semanas.
+    for sid in list(_title_cache.keys()):
+        if sid not in live_sids:
+            del _title_cache[sid]
     return entries
 
 
@@ -336,7 +400,7 @@ class Ticker:
         self.slide_t0 = None
         self.slide_from_state = STATE_IDLE
         self.slide_to_state = STATE_IDLE
-        self.hold_started = time.time()
+        self.hold_started = time.monotonic()
         self.last_frame_state = None
         self._pending_save = None
         self._drag_origin = None
@@ -653,7 +717,9 @@ class Ticker:
         idx = self._index_of_sid(self.current_sid)
         x0, x1 = g["view_x0"], g["view_x1"]
         bar_y = g["bar_y"]
-        hold_progress = 0.0 if self.paused else min(1.0, (time.time() - self.hold_started) * 1000 / self.HOLD_MS)
+        # time.monotonic() (nao time.time()) para o progresso nao "pular" pra
+        # 100% instantaneamente apos o PC voltar de suspensao/hibernacao.
+        hold_progress = 0.0 if self.paused else min(1.0, (time.monotonic() - self.hold_started) * 1000 / self.HOLD_MS)
 
         if total <= 5:
             gap = 3
@@ -731,7 +797,7 @@ class Ticker:
 
     # -- rotação em blocos (carrossel) ---------------------------------------------------
     def _schedule_hold(self):
-        self.hold_started = time.time()
+        self.hold_started = time.monotonic()
         self.root.after(self.HOLD_MS, self._start_slide)
 
     def _start_slide(self):
@@ -748,7 +814,7 @@ class Ticker:
             self._cur_idx = idx if idx >= 0 else 0
             self.slide_from_state = derive_state(self._cur_session)
             self.slide_to_state = derive_state(next_block)
-            self.slide_t0 = time.time()
+            self.slide_t0 = time.monotonic()
             self.sliding = True
         except Exception:
             log_exception("_start_slide")
@@ -761,7 +827,7 @@ class Ticker:
 
     def _slide_frame(self, g):
         try:
-            t_raw = (time.time() - self.slide_t0) / (self.SLIDE_MS / 1000)
+            t_raw = (time.monotonic() - self.slide_t0) / (self.SLIDE_MS / 1000)
             if t_raw >= 1.0:
                 self.current_sid = self._next_sid
                 self.sliding = False
