@@ -102,6 +102,12 @@ See `CHANGELOG.md` for version history.
 - Reset position (re-anchors automatically near the taskbar)
 - Quit
 
+**Reopening it**: after closing, the installer leaves three ways to start it
+again — search "Task Bar Hero Code" in the Start menu, the desktop shortcut,
+or the `/taskbar-hero` command in any Claude Code session. Trying to open a
+second instance while one is already running just brings up a "already
+running" notice instead of duplicating the widget.
+
 ## Contributing
 
 Contributions are welcome via fork + Pull Request. See `CONTRIBUTING.md` for

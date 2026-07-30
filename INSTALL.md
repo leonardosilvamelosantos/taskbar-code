@@ -109,6 +109,23 @@ run `install.ps1`, it also **kills any previous instance** of `ticker.pyw`
 (by command line, via WMI) before starting the new one — that's expected,
 not a bug, if the window "blinks" on reinstall.
 
+`install.ps1` also creates two more shortcuts pointing to the same command,
+so the user can reopen the widget after closing it without rerunning the
+installer or logging back in: **`Task Bar Hero Code.lnk`** in the Start
+menu's `Programs` folder (searchable via the Windows key) and on the
+Desktop. `ticker.pyw` itself guards against a second instance via a named
+Windows mutex (`Global\ClaudeTaskbarHeroCode`) with a short retry — this
+also covers the reinstall race above, where the old process's mutex may not
+be released the instant it's killed. If a second instance is attempted
+while one is already running, it shows a message box and exits instead of
+opening a duplicate.
+
+Additionally, `install.ps1` installs a global `/taskbar-hero` Claude Code
+command at `~/.claude/commands/taskbar-hero.md`, generated from
+`commands/taskbar-hero.md.template` (with `{{REPO_ROOT}}` substituted for
+this repo's absolute path) — this lets the user start the widget from any
+Claude Code session, not just one opened in this repository.
+
 ## Optional: `/statusline` patch
 
 Only relevant if the user already has a custom `statusLine.command` in
@@ -187,12 +204,15 @@ Only report success to the user after these 4 checks pass.
 1. Kill any `pythonw.exe`/`python.exe` process whose command line contains
    `ticker.pyw`.
 2. Delete the **`ClaudeTaskbarHero.lnk`** shortcut in
-   `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`.
-3. In `~/.claude/settings.json`, remove any hook object whose `command`
+   `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`, and the two
+   **`Task Bar Hero Code.lnk`** shortcuts in
+   `%APPDATA%\Microsoft\Windows\Start Menu\Programs` and on the Desktop.
+3. Delete `~/.claude/commands/taskbar-hero.md`.
+4. In `~/.claude/settings.json`, remove any hook object whose `command`
    contains `taskbar-hero-update.js` (don't remove the other hooks for the
    same event).
-4. If the `/statusline` patch was applied, restore the
+5. If the `/statusline` patch was applied, restore the
    `<statusline>.js.bak` file created next to it — **this is not reverted
    automatically**, not even by `uninstall.ps1`.
-5. Optionally delete `~/.claude/taskbar-hero/` (runtime state: window
+6. Optionally delete `~/.claude/taskbar-hero/` (runtime state: window
    position, per-session status, usage, log).

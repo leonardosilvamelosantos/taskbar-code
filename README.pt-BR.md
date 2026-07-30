@@ -99,6 +99,12 @@ Veja `CHANGELOG.md` para o histórico de versões.
 - Resetar posição (volta a ancorar automaticamente perto da barra de tarefas)
 - Sair
 
+**Reabrindo depois de fechar**: o instalador deixa três caminhos para subir o
+widget de novo — procurar "Task Bar Hero Code" no Menu Iniciar, o atalho na
+Área de Trabalho, ou o comando `/taskbar-hero` em qualquer sessão do Claude
+Code. Tentar abrir uma segunda instância enquanto uma já está rodando só
+mostra um aviso de "já está em execução" em vez de duplicar o widget.
+
 ## Contribuindo
 
 Contribuições são bem-vindas via fork + Pull Request. Veja

@@ -56,10 +56,19 @@ try {
     Write-Warn "Nao consegui consultar processos via WMI (pode estar bloqueado por politica) - encerre manualmente pelo Gerenciador de Tarefas se necessario."
 }
 
-Write-Step "Removendo atalho de inicializacao..."
-$ShortcutPath = Join-Path ([Environment]::GetFolderPath('Startup')) 'ClaudeTaskbarHero.lnk'
-Remove-Item -Path $ShortcutPath -ErrorAction SilentlyContinue
-Write-Ok "Atalho removido (se existia)."
+Write-Step "Removendo atalhos..."
+$StartupShortcut = Join-Path ([Environment]::GetFolderPath('Startup')) 'ClaudeTaskbarHero.lnk'
+$StartMenuShortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Task Bar Hero Code.lnk'
+$DesktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Task Bar Hero Code.lnk'
+Remove-Item -Path $StartupShortcut -ErrorAction SilentlyContinue
+Remove-Item -Path $StartMenuShortcut -ErrorAction SilentlyContinue
+Remove-Item -Path $DesktopShortcut -ErrorAction SilentlyContinue
+Write-Ok "Atalhos removidos (os que existiam)."
+
+Write-Step "Removendo comando /taskbar-hero..."
+$CommandDestPath = Join-Path $ClaudeDir 'commands\taskbar-hero.md'
+Remove-Item -Path $CommandDestPath -ErrorAction SilentlyContinue
+Write-Ok "Comando removido (se existia)."
 
 if (Test-Path $SettingsPath) {
     Write-Step "Removendo hooks do Task Bar Hero em settings.json..."

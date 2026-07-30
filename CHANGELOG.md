@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.3
+
+- **New**: two more ways to start the widget besides autostart — a Start
+  menu shortcut ("Task Bar Hero Code", searchable via the Windows key) and
+  a Desktop shortcut, both created by `install.ps1`. Previously the only
+  shortcut was in the Startup folder, so closing the widget left no way to
+  reopen it short of logging back in or rerunning the installer.
+- **New**: a global `/taskbar-hero` Claude Code command
+  (`~/.claude/commands/taskbar-hero.md`, installed from
+  `commands/taskbar-hero.md.template`) that starts the widget from any
+  session, not just one opened in this repository.
+- **Fix**: `ticker.pyw` had no protection against a second instance. With
+  three easy-to-click entry points now available, this became a real risk
+  (duplicate overlapping widgets). Added a named-mutex guard
+  (`Global\ClaudeTaskbarHeroCode`) with a short retry — a second launch
+  while one is already running shows a message box and exits instead of
+  duplicating. The retry also covers the pre-existing install.ps1 reinstall
+  race (old process killed and new one started with no pause in between).
+- `uninstall.ps1` removes the two new shortcuts and the `/taskbar-hero`
+  command alongside what it already removed.
+
 ## v1.2
 
 Fixes found by a 4-agent parallel gap review (portability across machines,

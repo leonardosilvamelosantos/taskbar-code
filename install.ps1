@@ -236,18 +236,45 @@ if ($settings.PSObject.Properties['statusLine'] -and $settings.statusLine.comman
     Write-Warn "Nenhum /statusline customizado encontrado - o anel de uso (5h) fica vazio (ok, o resto funciona normalmente)."
 }
 
-# -- 5. Atalho de inicializacao automatica --------------------------------------
-Write-Step "Criando atalho de inicializacao automatica..."
-$Startup = [Environment]::GetFolderPath('Startup')
-$ShortcutPath = Join-Path $Startup 'ClaudeTaskbarHero.lnk'
+# -- 5. Atalhos (autostart, Menu Iniciar, Area de Trabalho) ---------------------
+Write-Step "Criando atalhos..."
 $WshShell = New-Object -ComObject WScript.Shell
-$Shortcut = $WshShell.CreateShortcut($ShortcutPath)
-$Shortcut.TargetPath = $PythonwExe
-$Shortcut.Arguments = "`"$TickerPath`""
-$Shortcut.WorkingDirectory = $RepoRoot
-$Shortcut.WindowStyle = 7
-$Shortcut.Save()
-Write-Ok "Atalho criado em $ShortcutPath"
+
+function New-TbhShortcut ($Path) {
+    $Shortcut = $WshShell.CreateShortcut($Path)
+    $Shortcut.TargetPath = $PythonwExe
+    $Shortcut.Arguments = "`"$TickerPath`""
+    $Shortcut.WorkingDirectory = $RepoRoot
+    $Shortcut.WindowStyle = 7
+    $Shortcut.Save()
+    Write-Ok "Atalho criado em $Path"
+}
+
+# Nome do atalho de autostart nao muda: uninstall.ps1 e INSTALL.md ja
+# referenciam esse nome exato.
+$StartupShortcut = Join-Path ([Environment]::GetFolderPath('Startup')) 'ClaudeTaskbarHero.lnk'
+New-TbhShortcut -Path $StartupShortcut
+
+# Menu Iniciar e Area de Trabalho: nome legivel (e o texto que aparece na
+# busca do Menu Iniciar), para o usuario conseguir reabrir o widget depois
+# de fechar sem precisar relogar ou rodar o instalador de novo.
+$StartMenuShortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Task Bar Hero Code.lnk'
+New-TbhShortcut -Path $StartMenuShortcut
+
+$DesktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Task Bar Hero Code.lnk'
+New-TbhShortcut -Path $DesktopShortcut
+
+# -- 5b. Comando /taskbar-hero global no Claude Code -----------------------------
+Write-Step "Instalando comando /taskbar-hero..."
+$CommandTemplatePath = Join-Path $RepoRoot 'commands\taskbar-hero.md.template'
+$CommandsDir = Join-Path $ClaudeDir 'commands'
+if (-not (Test-Path $CommandsDir)) {
+    New-Item -ItemType Directory -Path $CommandsDir -Force | Out-Null
+}
+$CommandContent = (Get-Content $CommandTemplatePath -Raw -Encoding UTF8) -replace '\{\{REPO_ROOT\}\}', $RepoRoot
+$CommandDestPath = Join-Path $CommandsDir 'taskbar-hero.md'
+Set-Utf8NoBom -Path $CommandDestPath -Content $CommandContent
+Write-Ok "Comando /taskbar-hero instalado em $CommandDestPath"
 
 # -- 6. Subir o ticker agora -----------------------------------------------------
 Write-Step "Iniciando o Task Bar Hero..."

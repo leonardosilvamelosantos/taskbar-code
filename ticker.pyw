@@ -64,6 +64,41 @@ def log_exception(where):
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
 
+# Guarda de instancia unica via mutex nomeado do Windows. Sem isso, cada
+# atalho novo (Menu Iniciar, Area de Trabalho, /taskbar-hero) e um jeito de
+# abrir um segundo widget por engano. O retry curto cobre a corrida do
+# install.ps1, que mata a instancia antiga e sobe a nova sem pausa entre as
+# duas coisas - o mutex do processo morto pode levar um instante para ser
+# liberado pelo Windows.
+_INSTANCE_MUTEX_NAME = "Global\\ClaudeTaskbarHeroCode"
+ERROR_ALREADY_EXISTS = 183
+
+
+def _acquire_single_instance(retries=10, delay=0.2):
+    for _ in range(retries):
+        kernel32.SetLastError(0)
+        handle = kernel32.CreateMutexW(None, True, _INSTANCE_MUTEX_NAME)
+        if handle and kernel32.GetLastError() != ERROR_ALREADY_EXISTS:
+            return handle
+        if handle:
+            kernel32.CloseHandle(handle)
+        time.sleep(delay)
+    return None
+
+
+# Mantido vivo pelo tempo de vida do processo (referencia de modulo) para o
+# garbage collector nao fechar o handle e liberar o mutex cedo demais.
+_instance_mutex = _acquire_single_instance()
+if _instance_mutex is None:
+    import tkinter.messagebox as messagebox
+
+    _dup_root = tk.Tk()
+    _dup_root.withdraw()
+    messagebox.showinfo(
+        "Task Bar Hero Code", "O Task Bar Hero Code ja esta em execucao."
+    )
+    sys.exit(0)
+
 HWND_TOP = 0
 HWND_TOPMOST = -1
 SWP_NOMOVE, SWP_NOSIZE, SWP_NOACTIVATE = 0x0002, 0x0001, 0x0010
