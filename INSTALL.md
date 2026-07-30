@@ -1,193 +1,198 @@
-# Instalação
+> 🇧🇷 [Leia em português](INSTALL.pt-BR.md)
 
-Este documento é escrito para ser seguido por **um agente Claude Code** que
-acabou de clonar este repositório e foi instruído a instalar o Task Bar Hero
-— não só por um humano lendo passo a passo. Se você é o agente: siga as
-seções na ordem, rode os comandos de verificação indicados, e não invente
-caminhos ou nomes de arquivo além dos citados aqui.
+# Installation
 
-## Caminho rápido
+This document is written to be followed by **a Claude Code agent** that just
+cloned this repository and was instructed to install Task Bar Hero — not
+just by a human reading step by step. If you're the agent: follow the
+sections in order, run the verification commands listed, and don't invent
+paths or file names beyond the ones mentioned here.
 
-Na raiz do repositório clonado:
+## Quick path
+
+From the root of the cloned repository:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1 -Yes
 ```
 
-Use sempre `-Yes` ao instalar de forma autônoma/não-interativa (é o caso de
-um agente rodando isso via ferramenta de shell): sem esse flag, se o usuário
-tiver um `/statusline` customizado compatível, o script pergunta antes de
-aplicar o patch opcional — e um console não-interativo não consegue
-responder a esse prompt. O script já trata isso com segurança (não trava,
-só pula o patch com aviso), mas `-Yes` evita a ambiguidade.
+Always use `-Yes` when installing autonomously/non-interactively (this is
+the case when an agent runs this via a shell tool): without that flag, if
+the user has a compatible custom `/statusline`, the script asks before
+applying the optional patch — and a non-interactive console can't answer
+that prompt. The script already handles this safely (it doesn't hang, it
+just skips the patch with a warning), but `-Yes` removes the ambiguity.
 
-Isso detecta Python/Node/bash, registra os hooks, cria o atalho de autostart
-e já sobe o widget. Se der certo, pule para "Verificação" e pare por aí.
+This detects Python/Node/bash, registers the hooks, creates the autostart
+shortcut, and starts the widget right away. If it succeeds, skip to
+"Verification" and stop there.
 
-Se o script falhar (permissão negada, ambiente não-Windows padrão, shell
-diferente, etc.), **não desista** — o resto deste documento descreve o
-contrato exato por trás do script, para você reproduzir manualmente (via
-Read/Edit/Bash) o que ele faria.
+If the script fails (permission denied, non-standard Windows environment,
+different shell, etc.), **don't give up** — the rest of this document
+describes the exact contract behind the script, so you can reproduce
+manually (via Read/Edit/Bash) what it would have done.
 
-## Pré-requisitos e como checar
+## Prerequisites and how to check them
 
-| Requisito | Comando de checagem | Se faltar |
+| Requirement | Check command | If missing |
 |---|---|---|
-| Windows 10/11 | — (o projeto é Windows-only: usa `ctypes.windll` e o sqlite do Warp) | Pare e avise o usuário — não há suporte a Linux/Mac. |
-| Python 3.x com Tkinter | `py -3 -c "import tkinter"` (ou `python -c "import tkinter"`) — sucesso silencioso = OK | Avise o usuário e pare. Sugestão: `winget install -e --id Python.Python.3.12`. Não instale nada sozinho sem perguntar. |
-| Node.js | `node --version` | Avise o usuário e pare. Sugestão: `winget install -e --id OpenJS.NodeJS.LTS`. |
-| bash | `bash --version` — usado no campo `"shell"` dos hooks registrados; sem ele os hooks falham silenciosamente | Avise o usuário. Sugestão: `winget install -e --id Git.Git` (traz o Git Bash). `install.ps1` já checa isso e só avisa (não bloqueia a instalação). |
+| Windows 10/11 | — (the project is Windows-only: it uses `ctypes.windll` and Warp's sqlite) | Stop and tell the user — there's no Linux/Mac support. |
+| Python 3.x with Tkinter | `py -3 -c "import tkinter"` (or `python -c "import tkinter"`) — silent success = OK | Tell the user and stop. Suggestion: `winget install -e --id Python.Python.3.12`. Don't install anything on your own without asking. |
+| Node.js | `node --version` | Tell the user and stop. Suggestion: `winget install -e --id OpenJS.NodeJS.LTS`. |
+| bash | `bash --version` — used in the `"shell"` field of the registered hooks; without it the hooks fail silently | Warn the user. Suggestion: `winget install -e --id Git.Git` (brings Git Bash). `install.ps1` already checks this and only warns (doesn't block installation). |
 
-Não prossiga além disto se Windows/Python/Node faltarem — reporte o que
-falta ao usuário em vez de tentar contornar. A ausência de `bash` é só um
-aviso, não um bloqueio (a instalação continua, mas os hooks não vão disparar
-até o usuário instalar o Git for Windows).
+Don't proceed further if Windows/Python/Node are missing — report what's
+missing to the user instead of trying to work around it. The absence of
+`bash` is just a warning, not a blocker (installation continues, but the
+hooks won't fire until the user installs Git for Windows).
 
-## O que precisa existir para o widget funcionar
+## What needs to exist for the widget to work
 
-Não é preciso copiar nada para `~/.claude` — o hook e o `ticker.pyw` podem
-rodar direto de onde o repositório foi clonado. Só duas coisas precisam
-acontecer:
+Nothing needs to be copied into `~/.claude` — the hook and `ticker.pyw` can
+run directly from wherever the repository was cloned. Only two things need
+to happen:
 
-### 1. Hooks registrados em `~/.claude/settings.json`
+### 1. Hooks registered in `~/.claude/settings.json`
 
-O arquivo tem uma chave `hooks` cujo formato já deve lhe ser familiar (é o
-mecanismo padrão de hooks do Claude Code). Para cada um destes eventos —
+The file has a `hooks` key whose format should already be familiar to you
+(it's Claude Code's standard hooks mechanism). For each of these events —
 `UserPromptSubmit`, `SessionStart`, `SessionEnd`, `PreToolUse`,
-`PostToolUse`, `Notification`, `Stop`, `SubagentStop` — garanta que existe
-**pelo menos um** grupo cujo `command` contenha o caminho absoluto para
-`hooks/taskbar-hero-update.js` deste repositório. Exemplo de um grupo válido
-(adicione ao array do evento, não substitua os que já existem):
+`PostToolUse`, `Notification`, `Stop`, `SubagentStop` — make sure there is
+**at least one** group whose `command` contains the absolute path to this
+repository's `hooks/taskbar-hero-update.js`. Example of a valid group (add
+it to the event's array, don't replace what's already there):
 
 ```json
 {
   "hooks": [
-    { "type": "command", "command": "node \"<CAMINHO_ABSOLUTO_DO_REPO>\\hooks\\taskbar-hero-update.js\"", "shell": "bash" }
+    { "type": "command", "command": "node \"<ABSOLUTE_REPO_PATH>\\hooks\\taskbar-hero-update.js\"", "shell": "bash" }
   ]
 }
 ```
 
-Regra de ouro, para não duplicar em reinstalações: **antes de adicionar,
-normalize e compare o caminho** (não um match de substring solto) —
-extraia o trecho entre aspas do `command` de cada entrada já existente
-naquele evento, expanda um eventual `$HOME` literal para o valor real,
-unifique separadores de caminho (`/` vs `\`), e só então compare com o
-caminho absoluto do hook deste repo. Se bater, pule aquele evento. Se não
-bater com nenhuma entrada existente, adicione. Nunca remova ou substitua
-hooks que já estavam lá para outras finalidades — e nunca use um match por
-puro nome de arquivo (`taskbar-hero-update.js` sem o caminho completo):
-isso confundiria instalações vindas de clones diferentes do mesmo repo.
+Golden rule, to avoid duplicates on reinstall: **normalize and compare the
+path before adding** (not a loose substring match) — extract the quoted
+portion from each existing entry's `command` in that event, expand any
+literal `$HOME` to its real value, unify path separators (`/` vs `\`), and
+only then compare against this repo's absolute hook path. If it matches,
+skip that event. If it doesn't match any existing entry, add it. Never
+remove or replace hooks that were already there for other purposes — and
+never match by bare file name (`taskbar-hero-update.js` without the full
+path): that would confuse installs coming from different clones of the same
+repo.
 
-Se `settings.json` não existir ainda, crie um novo só com esses hooks. Se
-existir, faça um merge cirúrgico (leia com `Read`, edite com `Edit`/`Write`,
-ou use `install.ps1` que já faz isso) — e **faça uma cópia de backup do
-arquivo antes de reescrevê-lo** (`settings.json.bak`), já que é o arquivo de
-configuração central do usuário.
+If `settings.json` doesn't exist yet, create a new one with just these
+hooks. If it exists, do a surgical merge (read with `Read`, edit with
+`Edit`/`Write`, or use `install.ps1`, which already does this) — and **make
+a backup copy of the file before rewriting it** (`settings.json.bak`), since
+it's the user's central configuration file.
 
-**Atenção de encoding**: grave o arquivo em UTF-8 **sem BOM**. Ferramentas
-como `Set-Content -Encoding UTF8` do PowerShell 5.1 adicionam BOM por padrão,
-o que quebra o parser de JSON do próprio Claude Code. Se for usar
-PowerShell, use `[System.IO.File]::WriteAllText($path, $json, (New-Object
-System.Text.UTF8Encoding($false)))` em vez de `Set-Content`.
+**Encoding warning**: write the file as UTF-8 **without BOM**. Tools like
+PowerShell 5.1's `Set-Content -Encoding UTF8` add a BOM by default, which
+breaks Claude Code's own JSON parser. If you're using PowerShell, use
+`[System.IO.File]::WriteAllText($path, $json, (New-Object
+System.Text.UTF8Encoding($false)))` instead of `Set-Content`.
 
-### 2. O widget rodando
+### 2. The widget running
 
 ```
-pythonw.exe "<CAMINHO_ABSOLUTO_DO_REPO>\ticker.pyw"
+pythonw.exe "<ABSOLUTE_REPO_PATH>\ticker.pyw"
 ```
 
-`pythonw.exe` (não `python.exe`) evita abrir uma janela de console. Para
-autostart no login, crie um atalho `.lnk` chamado **`ClaudeTaskbarHero.lnk`**
-em `shell:startup`
-(`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`) apontando para
-esse comando — `install.ps1` já faz isso via `WScript.Shell` COM, disponível
-nativamente em qualquer PowerShell (não precisa de `pywin32`). Se você já
-rodar `install.ps1`, ele também **encerra qualquer instância antiga** do
-`ticker.pyw` (por linha de comando via WMI) antes de subir a nova — isso é
-esperado, não é um bug se a janela "piscar" ao reinstalar.
+`pythonw.exe` (not `python.exe`) avoids opening a console window. For
+autostart on login, create a `.lnk` shortcut named
+**`ClaudeTaskbarHero.lnk`** in `shell:startup`
+(`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`) pointing to that
+command — `install.ps1` already does this via the `WScript.Shell` COM
+object, natively available in any PowerShell (no `pywin32` needed). If you
+run `install.ps1`, it also **kills any previous instance** of `ticker.pyw`
+(by command line, via WMI) before starting the new one — that's expected,
+not a bug, if the window "blinks" on reinstall.
 
-## Opcional: patch do `/statusline`
+## Optional: `/statusline` patch
 
-Só relevante se o usuário já tiver um `statusLine.command` customizado em
-`settings.json` (verifique lá). Se tiver, e o script apontado ainda não
-contiver o marcador de texto `Task Bar Hero`, você pode oferecer inserir o
-conteúdo de `statusline-patch.snippet.js` logo antes da última chamada de
-`process.stdout.write` naquele arquivo — isso alimenta o anel externo (uso do
-rate-limit de 5h) do widget. **Sempre faça um backup `.bak` antes de tocar
-num arquivo do usuário**, e pergunte antes de aplicar se estiver rodando de
-forma interativa (em modo não-interativo, pule com aviso em vez de travar
-esperando uma resposta). Se o usuário não tiver `/statusline` customizado,
-pule — o widget funciona normalmente, só o anel de 5h fica vazio.
+Only relevant if the user already has a custom `statusLine.command` in
+`settings.json` (check there). If they do, and the referenced script doesn't
+already contain the text marker `Task Bar Hero`, you can offer to insert the
+contents of `statusline-patch.snippet.js` right before the last
+`process.stdout.write` call in that file — this feeds the widget's outer
+ring (5h rate-limit usage). **Always make a `.bak` backup before touching a
+user's file**, and ask before applying if running interactively (in
+non-interactive mode, skip with a warning instead of hanging waiting for a
+response). If the user doesn't have a custom `/statusline`, skip — the
+widget still works normally, only the 5h ring stays empty.
 
-**Depois de aplicar o patch**, valide antes de reportar sucesso:
-1. `node --check "<caminho_do_statusline>"` — confirma que a sintaxe
-   continua válida. Se falhar, restaure o `.bak` imediatamente.
-2. Confirme que `~/.claude/taskbar-hero/usage.json` passa a ganhar uma
-   entrada para a sessão atual depois que o `/statusline` rodar de novo.
+**After applying the patch**, validate before reporting success:
+1. `node --check "<statusline_path>"` — confirms the syntax is still valid.
+   If it fails, restore the `.bak` immediately.
+2. Confirm that `~/.claude/taskbar-hero/usage.json` gains an entry for the
+   current session after `/statusline` runs again.
 
-## Verificação
+## Verification
 
-Rode estes comandos e confirme os resultados esperados antes de dizer ao
-usuário que terminou. Os exemplos abaixo são em PowerShell — **não use
-`echo | node ...`**: o `echo` do PowerShell injeta um BOM (U+FEFF) no início
-do stdin, e isso faz o `JSON.parse` do hook falhar silenciosamente (exit
-code 0, mas nada é escrito). Escreva o JSON num arquivo temporário primeiro.
+Run these commands and confirm the expected results before telling the user
+you're done. The examples below are PowerShell — **don't use
+`echo | node ...`**: PowerShell's `echo` injects a BOM (U+FEFF) at the start
+of stdin, which makes the hook's `JSON.parse` fail silently (exit code 0,
+but nothing gets written). Write the JSON to a temp file first.
 
-1. **Hook responde e escreve estado**:
+1. **Hook responds and writes state**:
    ```powershell
    [System.IO.File]::WriteAllText("$env:TEMP\tbh-verify.json", '{"session_id":"verify-test","cwd":"C:\\test","hook_event_name":"SessionStart"}', (New-Object System.Text.UTF8Encoding($false)))
    Get-Content "$env:TEMP\tbh-verify.json" -Raw | node hooks\taskbar-hero-update.js
    ```
-   (`Out-File -Encoding utf8NoBOM` só existe no PowerShell 7+; em PowerShell
-   5.1 use `[System.IO.File]::WriteAllText` como acima, senão o arquivo sai
-   com BOM e cai no mesmo bug.)
-   Depois confira que `~/.claude/taskbar-hero/sessions/verify-test.json`
-   existe e tem conteúdo. Remova esse arquivo de teste depois (é um arquivo
-   por sessão, não precisa editar um JSON compartilhado).
+   (`Out-File -Encoding utf8NoBOM` only exists in PowerShell 7+; in
+   PowerShell 5.1 use `[System.IO.File]::WriteAllText` as above, otherwise
+   the file comes out with a BOM and hits the same bug.)
+   Then check that `~/.claude/taskbar-hero/sessions/verify-test.json` exists
+   and has content. Remove that test file afterward (it's a per-session
+   file, no need to edit a shared JSON).
 
-2. **`ticker.pyw` sobe sem erro**: rode `python ticker.pyw` (com console, não
-   `pythonw`) por uns 10 segundos e confirme que não imprime traceback nem
-   fecha sozinho. Depois encerre e suba a versão real com `pythonw.exe`.
+2. **`ticker.pyw` starts without error**: run `python ticker.pyw` (with a
+   console, not `pythonw`) for about 10 seconds and confirm it doesn't print
+   a traceback or close on its own. Then stop it and start the real version
+   with `pythonw.exe`.
 
-3. **`~/.claude/taskbar-hero/ticker.log` está vazio ou não existe** — esse
-   arquivo só recebe conteúdo quando uma exceção acontece dentro do loop de
-   animação/polling.
+3. **`~/.claude/taskbar-hero/ticker.log` is empty or doesn't exist** — this
+   file only gets content when an exception happens inside the
+   animation/polling loop.
 
-4. **O processo está de pé**: confirme via
-   `Get-Process pythonw -ErrorAction SilentlyContinue` (ou equivalente) que
-   há um processo `pythonw.exe` com `ticker.pyw` na linha de comando.
+4. **The process is up**: confirm via
+   `Get-Process pythonw -ErrorAction SilentlyContinue` (or equivalent) that
+   there's a `pythonw.exe` process with `ticker.pyw` in its command line.
 
-Só relate sucesso ao usuário depois desses 4 pontos baterem.
+Only report success to the user after these 4 checks pass.
 
-## Se algo der errado
+## If something goes wrong
 
-- **`install.ps1` lança uma exceção no meio**: o script já cobre os casos
-  conhecidos (JSON inválido em `settings.json`, console não-interativo,
-  `settings.json.bak` sempre criado antes de reescrever). Se mesmo assim
-  falhar em algo não previsto, leia a mensagem de erro — ela deve dizer
-  exatamente qual etapa falhou (Python, Node, hooks, atalho, ou o processo).
-- **Hook nunca dispara** (nenhum arquivo aparece em
-  `~/.claude/taskbar-hero/sessions/`): confira se `bash` está instalado
-  (tabela de pré-requisitos acima) — os hooks são registrados com
+- **`install.ps1` throws an exception midway**: the script already covers
+  the known cases (invalid JSON in `settings.json`, non-interactive
+  console, `settings.json.bak` always created before rewriting). If it
+  still fails on something unexpected, read the error message — it should
+  say exactly which step failed (Python, Node, hooks, shortcut, or the
+  process).
+- **Hook never fires** (no file appears in
+  `~/.claude/taskbar-hero/sessions/`): check whether `bash` is installed
+  (prerequisites table above) — the hooks are registered with
   `"shell": "bash"`.
-- **`ticker.pyw` sobe mas a janela não aparece**: pode ser posição salva
-  fora da tela atual (monitor externo desconectado) — apague
-  `~/.claude/taskbar-hero/window_config.json` e reinicie o processo; ele
-  recalcula uma posição padrão ancorada na barra de tarefas.
-- **Erro de permissão ao gravar `settings.json`**: confira se o arquivo não
-  está aberto/travado por outro processo, ou marcado como somente leitura.
+- **`ticker.pyw` starts but the window doesn't appear**: could be a saved
+  position outside the current screen (external monitor disconnected) —
+  delete `~/.claude/taskbar-hero/window_config.json` and restart the
+  process; it recalculates a default position anchored to the taskbar.
+- **Permission error writing `settings.json`**: check whether the file is
+  open/locked by another process, or marked read-only.
 
-### Desfazer manualmente (se `uninstall.ps1` não servir)
+### Undo manually (if `uninstall.ps1` doesn't work)
 
-1. Encerre qualquer processo `pythonw.exe`/`python.exe` cuja linha de
-   comando contenha `ticker.pyw`.
-2. Apague o atalho **`ClaudeTaskbarHero.lnk`** em
+1. Kill any `pythonw.exe`/`python.exe` process whose command line contains
+   `ticker.pyw`.
+2. Delete the **`ClaudeTaskbarHero.lnk`** shortcut in
    `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`.
-3. Em `~/.claude/settings.json`, remova qualquer objeto de hook cujo
-   `command` contenha `taskbar-hero-update.js` (não remova os outros hooks
-   do mesmo evento).
-4. Se o patch do `/statusline` foi aplicado, restaure o arquivo
-   `<statusline>.js.bak` criado ao lado dele — **isso não é revertido
-   automaticamente**, nem pelo `uninstall.ps1`.
-5. Opcionalmente apague `~/.claude/taskbar-hero/` (estado runtime: posição
-   da janela, status por sessão, uso, log).
+3. In `~/.claude/settings.json`, remove any hook object whose `command`
+   contains `taskbar-hero-update.js` (don't remove the other hooks for the
+   same event).
+4. If the `/statusline` patch was applied, restore the
+   `<statusline>.js.bak` file created next to it — **this is not reverted
+   automatically**, not even by `uninstall.ps1`.
+5. Optionally delete `~/.claude/taskbar-hero/` (runtime state: window
+   position, per-session status, usage, log).

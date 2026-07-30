@@ -2,91 +2,90 @@
 
 ## v1.2
 
-Correções encontradas por uma revisão de gaps com 4 agentes em paralelo
-(portabilidade entre máquinas, robustez do instalador, completude da
-documentação, cenários de runtime não testados) — dois bugs confirmados por
-execução real, o resto por leitura:
+Fixes found by a 4-agent parallel gap review (portability across machines,
+installer robustness, documentation completeness, untested runtime
+scenarios) — two bugs confirmed by live execution, the rest by reading:
 
-- **Hook**: corrigido BOM (U+FEFF) quebrando `JSON.parse` silenciosamente
-  quando o stdin vem de `echo`/pipe do PowerShell (mesma correção que o
-  `statusline-command.js` do usuário já tinha).
-- **Hook**: trocado o `status.json` compartilhado por um arquivo por sessão
-  (`sessions/<sessionId>.json`), eliminando a race condition de
-  leitura-modificação-escrita entre terminais diferentes; um lock via
-  `mkdir` cobre o caso de dois eventos concorrentes na mesma sessão (ex:
-  vários subagentes em paralelo).
-- **Nova feature**: rastreamento de comandos em segundo plano
-  (`run_in_background`, ex. Bash). Antes, quando o Claude parava de gerar
-  enquanto ainda esperava um comando em background terminar, o widget dizia
-  "Aguardando novo prompt" — sugerindo estar ocioso quando na verdade
-  seguia trabalhando. Agora mostra "Aguardando em 2º plano: `<comando>`",
-  e o indicador de pulso continua verde/trabalhando nesse caso.
-- **`install.ps1`/`uninstall.ps1`**: `Read-Host` não trava mais em sessão
-  não-interativa (antes lançava exceção terminante e abortava a instalação
-  no meio); match de hook por caminho absoluto normalizado (antes por
-  substring solto do nome do arquivo, o que causava falso positivo entre
-  clones diferentes do repo — e a primeira correção causou o problema
-  oposto, duplicar hooks já registrados com grafia de caminho diferente);
-  backup automático de `settings.json` antes de qualquer reescrita; erro
-  claro (em vez de stack trace crua) se `settings.json` estiver corrompido;
-  checagem de `bash` (necessário pelo `"shell": "bash"` dos hooks
-  registrados); verificação pós-start do processo do ticker; patch do
-  `/statusline` agora valida com `node --check` e reverte sozinho se
-  quebrar a sintaxe; `Unblock-File` nos arquivos do repo (Mark of the Web
-  de downloads via ZIP); novo `install.cmd` para clique-duplo.
-- **`ticker.pyw`**: DPI-awareness (corrige posição/nitidez em telas com
-  escala != 100%, o padrão de fábrica na maioria dos notebooks); posição
-  salva validada contra a área virtual de tela atual (evita a janela ficar
-  invisível para sempre se um monitor externo for desconectado);
-  `time.monotonic()` em vez de `time.time()` para os timers do carrossel
-  (a barra de progresso não pula mais para 100% instantaneamente depois de
-  o PC voltar de suspensão/hibernação); rotação do `ticker.log`; poda do
-  cache de títulos de conversa (`_title_cache`) para sessões encerradas;
-  `get_taskbar_rect()` não quebra mais se `Shell_TrayWnd` não for
-  encontrado.
-- Evento `SubagentStop` (já tratado no código do hook) agora também é
-  registrado pelo instalador — antes existia só como código morto do ponto
-  de vista de instalação.
-- `INSTALL.md`: comando de verificação corrigido (o exemplo antigo também
-  caía no bug do BOM), pré-requisito de `bash` documentado, seções de
-  troubleshooting e "desfazer manualmente" adicionadas.
+- **Hook**: fixed a BOM (U+FEFF) silently breaking `JSON.parse` when stdin
+  comes from a PowerShell `echo`/pipe (same fix the user's
+  `statusline-command.js` already had).
+- **Hook**: replaced the shared `status.json` with a per-session file
+  (`sessions/<sessionId>.json`), eliminating the read-modify-write race
+  condition between different terminals; a `mkdir`-based lock covers the
+  case of two concurrent events in the same session (e.g. several parallel
+  subagents).
+- **New feature**: tracking background commands (`run_in_background`, e.g.
+  Bash). Previously, when Claude stopped generating while still waiting for
+  a background command to finish, the widget said "Waiting for new
+  prompt" — suggesting it was idle when it was actually still working. It
+  now shows "Waiting on background: `<command>`", and the pulse indicator
+  stays green/working in that case.
+- **`install.ps1`/`uninstall.ps1`**: `Read-Host` no longer hangs in a
+  non-interactive session (previously threw a terminating exception and
+  aborted installation midway); hook matching now uses a normalized
+  absolute path (previously a loose file-name substring match, which
+  caused false positives between different clones of the repo — and the
+  first fix caused the opposite problem, duplicating already-registered
+  hooks with differently-spelled paths); automatic `settings.json` backup
+  before any rewrite; clear error (instead of a raw stack trace) if
+  `settings.json` is corrupted; checks for `bash` (required by the
+  registered hooks' `"shell": "bash"`); post-start verification of the
+  ticker process; the `/statusline` patch now validates with `node --check`
+  and self-reverts if it breaks the syntax; `Unblock-File` on the repo's
+  files (Mark of the Web from ZIP downloads); new `install.cmd` for
+  double-click installs.
+- **`ticker.pyw`**: DPI-awareness (fixes position/sharpness on screens with
+  scaling != 100%, the factory default on most laptops); saved position
+  validated against the current virtual screen area (prevents the window
+  from staying invisible forever if an external monitor is disconnected);
+  `time.monotonic()` instead of `time.time()` for the carousel timers (the
+  progress bar no longer jumps instantly to 100% after the PC wakes from
+  sleep/hibernation); `ticker.log` rotation; pruning of the conversation
+  title cache (`_title_cache`) for ended sessions;
+  `get_taskbar_rect()` no longer crashes if `Shell_TrayWnd` isn't found.
+- The `SubagentStop` event (already handled in the hook's code) is now also
+  registered by the installer — previously it only existed as dead code
+  from an installation standpoint.
+- `INSTALL.md`: fixed the verification command (the old example also hit
+  the BOM bug), documented the `bash` prerequisite, added troubleshooting
+  and "undo manually" sections.
 
 ## v1.1
 
-- Instalador (`install.ps1`) e desinstalador (`uninstall.ps1`) que funcionam
-  em qualquer PC Windows: detectam Python (com Tkinter) e Node.js, mesclam
-  os hooks em `~/.claude/settings.json` sem duplicar nem apagar hooks
-  existentes do usuário, criam o atalho de autostart sem depender de
-  `pywin32`, e sobem o widget imediatamente.
-- `INSTALL.md`: contrato de instalação documentado para ser seguido por um
-  agente (Claude Code), não só por um humano — cobre pré-requisitos, o
-  formato exato do merge em `settings.json` e uma checklist de verificação.
-- Checagem de plataforma no topo do `ticker.pyw` (mensagem clara em vez de
-  stack trace confuso fora do Windows).
-- Revisão de simplificação (reuso/simplificação/eficiência/altitude):
-  cache de `usage.json` por ciclo de poll em vez de reler a cada frame do
-  slide (~30fps), helper único para "achar bloco por sessionId", remoção de
-  parâmetro morto (`color_override`) e de constantes não usadas, e correção
-  de um bug real (`_draw_frame(STATE_IDLE)` redundante no `__init__` estava
-  sobrescrevendo o estado inicial correto).
-- Hook: evita podar o mapa de agentes em `SessionStart` (resultado era
-  descartado mesmo), troca um `sort` por `reduce` para achar o agente mais
-  recente, e compartilha a forma base do objeto de agente entre os ramos
-  `running`/`done`.
+- Installer (`install.ps1`) and uninstaller (`uninstall.ps1`) that work on
+  any Windows PC: detect Python (with Tkinter) and Node.js, merge the hooks
+  into `~/.claude/settings.json` without duplicating or deleting the user's
+  existing hooks, create the autostart shortcut without depending on
+  `pywin32`, and start the widget immediately.
+- `INSTALL.md`: installation contract documented to be followed by an agent
+  (Claude Code), not just a human — covers prerequisites, the exact
+  `settings.json` merge format, and a verification checklist.
+- Platform check at the top of `ticker.pyw` (clear message instead of a
+  confusing stack trace outside Windows).
+- Simplification review (reuse/simplification/efficiency/altitude):
+  `usage.json` cached per poll cycle instead of re-read on every carousel
+  frame (~30fps), a single helper for "find block by sessionId", removal of
+  a dead parameter (`color_override`) and unused constants, and a real bug
+  fix (a redundant `_draw_frame(STATE_IDLE)` in `__init__` was overwriting
+  the correct initial state).
+- Hook: avoids pruning the agent map on `SessionStart` (the result was
+  discarded anyway), swaps a `sort` for a `reduce` to find the most recent
+  agent, and shares the base agent object shape between the
+  `running`/`done` branches.
 
 ## v1.0
 
-- Widget flutuante ancorado na barra de tarefas do Windows, sempre no topo,
-  mostrando o estado (pulso animado), nome e atividade de cada sessão do
-  Claude Code.
-- Nome real da aba do Warp (lido do `warp.sqlite`, casado por
-  `WARP_TERMINAL_SESSION_UUID`), com fallback para o título da conversa
-  (`aiTitle`), nome derivado da sessão, e por fim a pasta.
-- Ícone de robô para subagentes (`Agent` tool), com contador quando há mais
-  de um rodando ao mesmo tempo na mesma sessão.
-- Anel duplo de uso: contexto por sessão (anel interno) e rate-limit de 5h
-  global da conta (anel externo, sempre o valor mais recente entre as
-  sessões), com as mesmas cores/thresholds do `/statusline`.
-- Carrossel entre terminais com barra de "stories" quando há mais de uma
-  sessão ativa.
-- Arrastável e redimensionável, com posição persistida.
+- Floating widget anchored to the Windows taskbar, always on top, showing
+  the state (animated pulse), name, and activity of each Claude Code
+  session.
+- Real Warp tab name (read from `warp.sqlite`, matched via
+  `WARP_TERMINAL_SESSION_UUID`), falling back to the conversation title
+  (`aiTitle`), a derived session name, and finally the folder.
+- Robot icon for subagents (`Agent` tool), with a counter when more than
+  one is running at the same time in the same session.
+- Double usage ring: per-session context (inner ring) and the account-wide
+  5h rate limit (outer ring, always the most recent value across
+  sessions), with the same colors/thresholds as `/statusline`.
+- Carousel between terminals with a "stories" bar when more than one
+  session is active.
+- Draggable and resizable, with persisted position.
