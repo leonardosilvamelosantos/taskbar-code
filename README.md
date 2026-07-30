@@ -1,4 +1,4 @@
-# Task Bar Hero
+# Task Bar Hero Code 
 
 Widget flutuante para Windows que mostra, em tempo real, o que cada sessão do
 [Claude Code](https://claude.com/claude-code) está fazendo — ancorado perto da
