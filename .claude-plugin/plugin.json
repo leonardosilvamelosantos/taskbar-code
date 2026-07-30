@@ -1,0 +1,14 @@
+{
+  "name": "taskbar-code",
+  "displayName": "Task Bar Hero Code",
+  "description": "Floating always-on-top Windows widget showing what each Claude Code session is doing in real time",
+  "version": "1.3.0",
+  "author": {
+    "name": "Leonardo Silva",
+    "url": "https://github.com/leonardosilvamelosantos"
+  },
+  "homepage": "https://github.com/leonardosilvamelosantos/taskbar-code",
+  "repository": "https://github.com/leonardosilvamelosantos/taskbar-code",
+  "license": "MIT",
+  "keywords": ["windows", "widget", "taskbar", "status", "productivity"]
+}

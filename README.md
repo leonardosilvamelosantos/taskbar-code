@@ -90,6 +90,20 @@ contrato exato por trás do script (formato do merge em `settings.json`,
 onde cada coisa precisa existir, checklist de verificação) para reproduzir
 manualmente.
 
+### Instalar como plugin do Claude Code
+
+Alternativa mais leve ao instalador acima — sem atalhos de Menu
+Iniciar/Área de Trabalho/autostart, só o hook e o comando `/taskbar-hero`
+disponíveis sob demanda:
+
+```
+/plugin marketplace add leonardosilvamelosantos/taskbar-code
+/plugin install taskbar-code@taskbar-code
+```
+
+Depois, rode `/taskbar-code:taskbar-hero` em qualquer sessão para subir o
+widget.
+
 Veja `CHANGELOG.md` para o histórico de versões.
 
 ## Limitações conhecidas

@@ -88,6 +88,18 @@ the exact contract behind the script (the `settings.json` merge format, where
 everything needs to exist, a verification checklist) so you can reproduce it
 manually.
 
+### Install as a Claude Code plugin
+
+A lighter alternative to the installer above — no Start menu/Desktop/autostart
+shortcuts, just the hook and the `/taskbar-hero` command available on demand:
+
+```
+/plugin marketplace add leonardosilvamelosantos/taskbar-code
+/plugin install taskbar-code@taskbar-code
+```
+
+Then run `/taskbar-code:taskbar-hero` in any session to start the widget.
+
 See `CHANGELOG.md` for version history.
 
 ## Known limitations

@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.3 (plugin)
+
+- **New**: the repository is now also a valid Claude Code plugin
+  (`.claude-plugin/plugin.json`) with its own self-hosted marketplace
+  (`.claude-plugin/marketplace.json`), installable immediately via
+  `/plugin marketplace add leonardosilvamelosantos/taskbar-code` +
+  `/plugin install taskbar-code@taskbar-code` — no review wait. This is a
+  lighter alternative distribution channel alongside `install.ps1`: it
+  reuses the same `hooks/taskbar-hero-update.js` (now also declared via
+  `hooks/hooks.json`) and adds a `/taskbar-code:taskbar-hero` skill
+  (`skills/taskbar-hero/SKILL.md`) to start the widget on demand — no
+  Start menu/Desktop/autostart shortcuts, by design (those still require
+  the full `install.ps1` installer). Validated with `claude plugin
+  validate` and tested loading live via `claude --plugin-dir .`.
+
 ## v1.3
 
 - **New**: two more ways to start the widget besides autostart — a Start

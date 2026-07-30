@@ -1,0 +1,15 @@
+{
+  "name": "taskbar-code",
+  "owner": {
+    "name": "Leonardo Silva",
+    "url": "https://github.com/leonardosilvamelosantos"
+  },
+  "description": "Task Bar Hero Code plugin marketplace",
+  "plugins": [
+    {
+      "name": "taskbar-code",
+      "source": "./",
+      "description": "Floating always-on-top Windows widget showing what each Claude Code session is doing in real time"
+    }
+  ]
+}
