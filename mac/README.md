@@ -51,10 +51,65 @@ Remove the `statusLine` key from `~/.claude/settings.json` (a timestamped
 `settings.json.bak-*` backup is created on install), then delete
 `~/.claude/taskbar-hero/`.
 
-## Why not the floating widget?
+## The floating widget (macOS port)
 
-A floating, always-on-top window that docks near the macOS menu bar / Dock is
-possible, but it needs a full rewrite against Cocoa (e.g. `rumps` for a menu-bar
-app, or `pyobjc` for `NSWindow` level + `NSWindowCollectionBehavior`). That's a
-separate, larger effort. The statusline covers the core value today with zero
-extra dependencies. A native menu-bar version is a good follow-up PR.
+`ticker_mac.py` is a real port of the Windows floating chip (`ticker.pyw`) —
+same "Vital Signs" design: animated pulse indicator, 2-line text (session name +
+what it's doing), dual metric ring (context / 5h rate limit), and the carousel
+bar across terminals. It reads the **same** state files, which are already
+cross-platform:
+
+- `~/.claude/sessions/<pid>.json` — written natively by Claude Code (status,
+  cwd, name, sessionId)
+- `~/.claude/taskbar-hero/sessions/<sid>.json` — written by the shared hook
+  (`hooks/taskbar-hero-update.js`) for the "Executando Bash · 1m" style summary
+- `~/.claude/taskbar-hero/usage.json` — written by the statusline patch, feeds
+  the rings (optional; rings just stay empty without it)
+
+What changed from the Windows build, all platform-forced:
+
+| Windows                                   | macOS port                          |
+|-------------------------------------------|-------------------------------------|
+| Win32 `SetWindowPos`/`SetWindowBand` z-order | Tk `-topmost`, re-asserted every 2s |
+| named kernel mutex (single instance)      | pidfile lock (`ticker.lock`)        |
+| `OpenProcess` liveness                    | `os.kill(pid, 0)`                   |
+| `Shell_TrayWnd` taskbar anchor            | screen bottom-right, above the Dock |
+| Segoe UI / Consolas                       | SF Pro / Menlo (with fallbacks)     |
+| Warp sqlite in `%LOCALAPPDATA%`           | Warp sqlite in `~/Library/Application Support` |
+
+### Install (widget + autostart)
+
+```bash
+bash mac/install-widget.sh
+```
+
+Copies the widget + state hook into `~/.claude/taskbar-hero/`, merges the hook
+into `settings.json` (8 events, idempotent, existing hooks preserved), installs
+a **LaunchAgent** (`~/Library/LaunchAgents/ai.claude.taskbar-hero.plist`) so it
+starts at login and restarts on crash, and launches it immediately.
+
+Requires `python3` with `tkinter` (`brew install python-tk`) and `node`.
+
+Controls: **drag** to move, **ctrl-click / right-click** for the menu
+(Pause / Reset position / Quit), resize from the bottom-right corner.
+
+### Run once without autostart
+
+```bash
+python3 mac/ticker_mac.py
+```
+
+### Uninstall
+
+```bash
+bash mac/uninstall-widget.sh
+```
+
+## Two ways to run it
+
+- **statusline** (`install.sh`) — zero deps, lives in the terminal footer.
+- **floating widget** (`install-widget.sh`) — closest to the Windows original,
+  needs python3+tkinter. They're independent; run either or both.
+
+A native menu-bar variant (rumps / pyobjc, docked by the clock) remains a good
+follow-up for anyone who wants the chip in the system menu bar instead.
